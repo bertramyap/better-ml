@@ -6,6 +6,8 @@ navbar:
       href: index.html
     - text: "Probabilistic Clustering"
       href: Probabilistic-Clustering.html
+    - text: "Coming Soon"
+      href: Coming-Soon.html
 output:
   html_document:
     theme: cosmo
