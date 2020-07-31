@@ -1,12 +1,11 @@
-name: "Better ML"
-output_dir: "docs"
+name: "Bertram Yap - Better ML"
 navbar:
   title: "Better ML"
   left:
-  - text: "Home"
-   href: home.html
-  - text: "Probabilistic Clustering"
-   href: Probabilistic-Clustering.html
+    - text: "Welcome"
+      href: index.html
+    - text: "Probabilistic Clustering"
+      href: Probabilistic-Clustering.html
 output:
   html_document:
- theme: cosmo
+    theme: cosmo
