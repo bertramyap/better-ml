@@ -154,7 +154,7 @@ ggplot(pred_df1_kmeans1, aes(x=X1, y=X2, group=km_clus_aligned , col=km_clus_ali
 
 ## Finding Parameters
 
-The way to find and optimise parameters is somewhat technical, I encourage you to read the references at the end of this markdown, and you are more than welcome to look into my .Rmd codes too.
+The way to find and optimise parameters is somewhat technical, I encourage you to read the references at the end of this markdown, and you are more than welcome to look into my [Probabilistic Clustering.Rmd in repo](https://github.com/bertramyap/better-ml)
 
 In summary, we need to do the following:
 
@@ -510,7 +510,7 @@ points(Kvals,two_se_upper,type="l",col="red")
 
 ```
 
-Running the model for different values of K with 10-folds CV (again feel free to read the code), we find that mean test log-likelihood is largest when K = 3 (although K = 4 is nearly as good), which is the correct number of clusters
+Running the model for different values of K with 10-folds CV (again feel free to read the code in [Probabilistic Clustering.Rmd in repo](https://github.com/bertramyap/better-ml)), we find that mean test log-likelihood is largest when K = 3 (although K = 4 is nearly as good), which is the correct number of clusters
 
 ```{r plot-10-fold CV K results, echo=FALSE, fig.cap='Figure 5: Mean held-out log-likelihood for different values of K'}
 plot(Kvals, mean_log_like, type="b", ylim=c(min(two_se_lower-0.2),max(two_se_upper+0.2)),
