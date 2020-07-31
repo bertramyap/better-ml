@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+
+
+<title>Probabilistic Clustering - Mixture Model</title>
+
+<script src="site_libs/jquery-1.11.3/jquery.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/default.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css">
+  pre:not([class]) {
+    background-color: white;
+  }
+</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+<style type="text/css">
+h1 {
+  font-size: 34px;
+}
+h1.title {
+  font-size: 38px;
+}
+h2 {
+  font-size: 30px;
+}
+h3 {
+  font-size: 24px;
+}
+h4 {
+  font-size: 18px;
+}
+h5 {
+  font-size: 16px;
+}
+h6 {
+  font-size: 12px;
+}
+.table th:not([align]) {
+  text-align: left;
+}
+</style>
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+</style>
+
+
+<style type="text/css">
+/* padding for bootstrap navbar */
+body {
+  padding-top: 51px;
+  padding-bottom: 40px;
+}
+/* offset scroll position for anchor links (for fixed navbar)  */
+.section h1 {
+  padding-top: 56px;
+  margin-top: -56px;
+}
+.section h2 {
+  padding-top: 56px;
+  margin-top: -56px;
+}
+.section h3 {
+  padding-top: 56px;
+  margin-top: -56px;
+}
+.section h4 {
+  padding-top: 56px;
+  margin-top: -56px;
+}
+.section h5 {
+  padding-top: 56px;
+  margin-top: -56px;
+}
+.section h6 {
+  padding-top: 56px;
+  margin-top: -56px;
+}
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #ffffff;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script>
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark it active
+  menuAnchor.parent().addClass('active');
+
+  // if it's got a parent navbar menu mark it active as well
+  menuAnchor.closest('li.dropdown').addClass('active');
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">Better ML</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Welcome</a>
+</li>
+<li>
+  <a href="Probabilistic-Clustering.html">Probabilistic Clustering</a>
+</li>
+<li>
+  <a href="Coming-Soon.html">Coming Soon</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div class="fluid-row" id="header">
+
+
+
+<h1 class="title toc-ignore">Probabilistic Clustering - Mixture Model</h1>
+
+</div>
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<div id="think-generatively" class="section level3">
+<h3>Think Generatively</h3>
+<p>The idea is simple, assuming there are 3 clusters, defined by 3 multivariate Gaussians (it can be other distributions) with observed data points, as with the example plotted below (which we will use throughout this)</p>
+<p>We want a model that can generate data that looks like the 3 clusters</p>
+<p>Now say we know the 3 Gaussians, we then can generate the data by:</p>
+<ol style="list-style-type: decimal">
+<li>Select one of the Gaussians</li>
+<li>Sample data from this Gaussian</li>
+</ol>
+<p>But how do we define the 3 Gaussians that is supposed to be unknown? We can do this by deriving the model likelihood function and find the parameters that maximise it! Just like the classic MLE!</p>
+<p>This is called a mixture model because we assume that the data is sampled from a mixture of several individual density functions</p>
+<pre class="r"><code># Generate simulated data to test model----
+set.seed(234)
+# cluster 1, 100 samples:
+clus_1 = rmvnorm(100, mean = c(0,5), sigma = matrix(c(0.5,0.1,0.1,5),ncol=2))
+# cluster 2, 200 samples:
+clus_2 = rmvnorm(200, mean = c(-7,5), sigma = matrix(c(4,0.1,0.1,0.5), ncol = 2))
+# cluster 3, 50 samples:
+clus_3 = rmvnorm(50, mean = c(-4,-0), sigma = matrix(c(1,0.7,0.7,1), ncol = 2))
+
+# put them together for plotting
+
+# for column on actual cluster
+actual = c(rep(1, nrow(clus_1)),rep(2, nrow(clus_2)),rep(3, nrow(clus_3)))
+
+train_df = as.data.frame(rbind(clus_1,clus_2,clus_3))
+
+train_df$actual_clus &lt;- as.factor(actual)
+
+colnames(train_df) &lt;- c(&quot;X1&quot;,&quot;X2&quot;,&quot;actual_clus&quot;)
+
+# plot the distribution:
+
+# create function that generate data for contours
+set.seed(23)
+
+create_data_for_mvnorm_contour &lt;- function(n, mean, sigma) {
+  d &lt;- as.data.table(rmvnorm(n, mean = mean, sigma = sigma))
+  setnames(d, names(d), c(&quot;x&quot;, &quot;y&quot;))
+  testd &lt;- as.data.table(expand.grid(
+    x = seq(from = min(d$x), to = max(d$x), length.out=50),
+    y = seq(from = min(d$y), to = max(d$y), length.out = 50)))
+  testd[,Density := dmvnorm(cbind(x,y), mean = colMeans(d), sigma = cov(d))]
+  return(testd)
+}
+
+# create data to plot contours
+clus_1_contour_actual &lt;- create_data_for_mvnorm_contour(1000, mean = c(0,5), sigma = matrix(c(0.5,0.1,0.1,5),ncol=2))
+clus_1_contour_actual$actual_clus = 1
+clus_2_contour_actual &lt;- create_data_for_mvnorm_contour(1000, mean = c(-7,5), sigma = matrix(c(4,0.1,0.1,0.5), ncol = 2))
+clus_2_contour_actual$actual_clus = 2
+clus_3_contour_actual &lt;- create_data_for_mvnorm_contour(1000, mean = c(-4,-0), sigma = matrix(c(1,0.7,0.7,1), ncol = 2))
+clus_3_contour_actual$actual_clus = 3
+
+contour_actual &lt;- rbind(clus_1_contour_actual,clus_2_contour_actual,clus_3_contour_actual)
+contour_actual$actual_clus &lt;- as.factor(contour_actual$actual_clus)
+
+
+ggplot(train_df, aes(x=X1, y=X2, group=actual_clus, col=actual_clus))+
+  geom_point()+
+  geom_contour(data = contour_actual, aes(x,y,z=Density), size = 1, linetype = 2, alpha = 0.3)</code></pre>
+<div class="figure">
+<img src="Probabilistic-Clustering_files/figure-html/our-data-1.png" alt="Figure 1: Our simulated datasets - with three 2-D Gaussians" width="672" />
+<p class="caption">
+Figure 1: Our simulated datasets - with three 2-D Gaussians
+</p>
+</div>
+</div>
+<div id="what-is-wrong-with-k-means" class="section level3">
+<h3>What is wrong with K-means?</h3>
+<p>K-means is one of the most popular clustering methods out there, it clusters observations by minimizing (up to local minima) the within-group dissimilarity.</p>
+<p>However, it has its disadvantage compared to using mixtures</p>
+<ul>
+<li><p>K-means cluster definition is crude as it uses one point (the centroid) to represent the whole cluster. Using mixtures incorporate a notion of shape</p></li>
+<li><p>Since each cluster is represented as a probability density using mixture models, it can have various shapes and data form (e.g. binary dataset with Bernoulli distributions)</p></li>
+<li><p>A posterior probability is the output of the model, hence we know the probability of an observation belongs to each cluster given parameters. This gives us a confidence indication on our clustering and also imply that using mixtures, clusters are less sensitive to outliers</p></li>
+<li><p>Because there is a dataset likelihood function, we can optimise K too. In K-means, this is impossible</p></li>
+</ul>
+</div>
+<div id="k-means-fails-in-our-simulated-dataset" class="section level3">
+<h3>K-means fails in our simulated dataset</h3>
+<p>We can see some misclassification mainly for cluster 2 as cluster 1 if we use K-means</p>
+<div class="figure">
+<img src="Probabilistic-Clustering_files/figure-html/clustering-problem-1.png" alt="Figure 2: K-means fails to capture the shape of clusters" width="672" />
+<p class="caption">
+Figure 2: K-means fails to capture the shape of clusters
+</p>
+</div>
+</div>
+</div>
+<div id="finding-parameters" class="section level2">
+<h2>Finding Parameters</h2>
+<p>The way to find and optimise parameters is somewhat technical, I encourage you to read the references at the end of this markdown, and you are more than welcome to look into my <a href="https://github.com/bertramyap/better-ml">Probabilistic Clustering.Rmd in repo</a></p>
+<p>In summary, we need to do the following:</p>
+<ol style="list-style-type: decimal">
+<li>Define our dataset likelihood</li>
+<li>Unfortunately, we will end up with log-sum expression which is hard to optimise, so we use Jensen’s Inequality and maximise the lower bound instead</li>
+<li>We take partial derivatives with respect to each parameter and equating to 0 and end up with two sets of expressions which require to solve with an iteration method called - Expectiation Maximisation (EM) Algorithm</li>
+</ol>
+</div>
+<div id="the-result" class="section level2">
+<h2>The Result</h2>
+<div id="summary-of-the-model-iterations" class="section level3">
+<h3>Summary of the model iterations</h3>
+<p>The plot below shows the initialised 3 Gaussians in green, and the resulted Gaussians that the model converges to using EM Algorithm in blue, compared with the actual Gaussians in red.</p>
+<p>Resulting Gaussians are very close to actual!!</p>
+<div class="figure">
+<img src="Probabilistic-Clustering_files/figure-html/plot%20model%20distributions%20against%20actaual-1.png" alt="Figure 3: Change in the Gaussians model likelihood" width="672" />
+<p class="caption">
+Figure 3: Change in the Gaussians model likelihood
+</p>
+</div>
+</div>
+<div id="the-model-output-with-posterior-probabilities-for-each-cluster-head" class="section level3">
+<h3>The model output with posterior probabilities for each cluster (head)</h3>
+<table>
+<colgroup>
+<col width="10%" />
+<col width="5%" />
+<col width="5%" />
+<col width="6%" />
+<col width="16%" />
+<col width="16%" />
+<col width="16%" />
+<col width="6%" />
+<col width="8%" />
+<col width="6%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="right">Simulated observation</th>
+<th align="right">X1</th>
+<th align="right">X2</th>
+<th align="left">Actual Cluster</th>
+<th align="right">Posterior Probability for Cluster 3</th>
+<th align="right">Posterior Probability for Cluster 2</th>
+<th align="right">Posterior Probability for Cluster 1</th>
+<th align="right">Max. Posterior</th>
+<th align="left">Predicted Cluster</th>
+<th align="right">Same as Actual</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">1</td>
+<td align="right">0.3969151</td>
+<td align="right">0.4323799</td>
+<td align="left">1</td>
+<td align="right">0.0000138</td>
+<td align="right">0.0000000</td>
+<td align="right">0.9999862</td>
+<td align="right">0.9999862</td>
+<td align="left">1</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="right">2</td>
+<td align="right">-1.0088671</td>
+<td align="right">8.2384402</td>
+<td align="left">1</td>
+<td align="right">0.0000000</td>
+<td align="right">0.0000044</td>
+<td align="right">0.9999956</td>
+<td align="right">0.9999956</td>
+<td align="left">1</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="right">3</td>
+<td align="right">1.0353373</td>
+<td align="right">5.3629194</td>
+<td align="left">1</td>
+<td align="right">0.0000005</td>
+<td align="right">0.0016125</td>
+<td align="right">0.9983870</td>
+<td align="right">0.9983870</td>
+<td align="left">1</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="right">4</td>
+<td align="right">0.0445500</td>
+<td align="right">-1.7810088</td>
+<td align="left">1</td>
+<td align="right">0.0000000</td>
+<td align="right">0.0000000</td>
+<td align="right">1.0000000</td>
+<td align="right">1.0000000</td>
+<td align="left">1</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="right">5</td>
+<td align="right">-0.3808923</td>
+<td align="right">2.5511852</td>
+<td align="left">1</td>
+<td align="right">0.0160735</td>
+<td align="right">0.0000866</td>
+<td align="right">0.9838400</td>
+<td align="right">0.9838400</td>
+<td align="left">1</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="right">6</td>
+<td align="right">0.0783891</td>
+<td align="right">7.4702457</td>
+<td align="left">1</td>
+<td align="right">0.0000000</td>
+<td align="right">0.0000080</td>
+<td align="right">0.9999920</td>
+<td align="right">0.9999920</td>
+<td align="left">1</td>
+<td align="right">1</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="and-the-model-result-plot" class="section level3">
+<h3>And the model result plot</h3>
+<p>We can see the model only put two observations in the wrong group, much better than K-means</p>
+<p>The plot also annotates the observations with the lowest class posterior probability</p>
+<div class="figure">
+<img src="Probabilistic-Clustering_files/figure-html/plot-result-1.png" alt="Figure 4: The resulting clusters" width="672" />
+<p class="caption">
+Figure 4: The resulting clusters
+</p>
+</div>
+</div>
+</div>
+<div id="finding-k-the-number-of-clusters" class="section level2">
+<h2>Finding K: the number of clusters:</h2>
+<ul>
+<li>Intuitively we can use K that maximises the dataset likelihood. However, as K increases, likelihood increases monotonically.</li>
+<li>This is because, with more distributions, data will lie near the mode of the pdf, hence likelihood with increase. Similar to overfitting</li>
+<li>We can use cross-validation to find the best K</li>
+</ul>
+<p>Running the model for different values of K with 10-folds CV (again feel free to read the code in <a href="https://github.com/bertramyap/better-ml">Probabilistic Clustering.Rmd in repo</a>), we find that mean test log-likelihood is largest when K = 3 (although K = 4 is nearly as good), which is the correct number of clusters</p>
+<div class="figure">
+<img src="Probabilistic-Clustering_files/figure-html/plot-10-fold%20CV%20K%20results-1.png" alt="Figure 5: Mean held-out log-likelihood for different values of K" width="672" />
+<p class="caption">
+Figure 5: Mean held-out log-likelihood for different values of K
+</p>
+</div>
+</div>
+<div id="limitations" class="section level2">
+<h2>Limitations</h2>
+<p>There are several limitations</p>
+<ol style="list-style-type: decimal">
+<li>No extensive packages for this algorithm: mclust in R is the closest but with limited flexibility (only support normal mixture model and BIC for selecting K)</li>
+<li>Like k-means, the algorithm only finds local optima, testing multiple starting points needed</li>
+<li>Some data forms might be better with kernelized k-means, e.g. radials</li>
+</ol>
+</div>
+<div id="extentions" class="section level2">
+<h2>Extentions</h2>
+<p>There are serveral usage extensions</p>
+<ol style="list-style-type: decimal">
+<li>Other forms of mixture components: e.g. Bernoulli for binary data</li>
+<li>Regularise param estimates by setting likelihood x prior</li>
+</ol>
+</div>
+<div id="key-references" class="section level2">
+<h2>Key References</h2>
+<p>Simon Rogers and Mark Girolami. A First Course in Machine Learning. CRC Press, second edition, 2017.</p>
+<p>Gareth James, Daniela Witten, Trevor Hastie, Robert Tibshirani. An Introduction to Statistical Learning : with Applications in R. New York: Springer, 2013.</p>
+</div>
+
+
+
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open')
+  });
+});
+</script>
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
