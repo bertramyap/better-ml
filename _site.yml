@@ -1,0 +1,12 @@
+name: "Better ML"
+output_dir: "docs"
+navbar:
+  title: "Better ML"
+  left:
+  - text: "Home"
+   href: home.html
+  - text: "Probabilistic Clustering"
+   href: Probabilistic-Clustering.html
+output:
+  html_document:
+ theme: cosmo
