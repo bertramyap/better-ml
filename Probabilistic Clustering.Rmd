@@ -1,0 +1,537 @@
+---
+title: "Probabilistic Clustering - Mixture Model"
+author: "Bertram Yap"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+
+```{r packages, include=FALSE}
+library(mvtnorm)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+library(tidyr)
+library(Hmisc)
+#library(stats)
+library(knitr)
+library(pracma)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+## Introduction
+
+### Think Generatively
+
+The idea is simple, assuming there are 3 clusters, defined by 3 multivariate Gaussians (it can be other distributions) with observed data points, as with the example plotted below (which we will use throughout this)
+
+We want a model that can generate data that looks like the 3 clusters
+
+Now say we know the 3 Gaussians, we then can generate the data by:
+
+1. Select one of the Gaussians
+2. Sample data from this Gaussian
+
+But how do we define the 3 Gaussians that is supposed to be unknown? We can do this by deriving the model likelihood function and find the parameters that maximise it! Just like the classic MLE!
+
+This is called a mixture model because we assume that the data is sampled from a mixture of several individual density functions
+
+```{r our-data, fig.cap = 'Figure 1: Our simulated datasets - with three 2-D Gaussians'}
+# Generate simulated data to test model----
+set.seed(234)
+# cluster 1, 100 samples:
+clus_1 = rmvnorm(100, mean = c(0,5), sigma = matrix(c(0.5,0.1,0.1,5),ncol=2))
+# cluster 2, 200 samples:
+clus_2 = rmvnorm(200, mean = c(-7,5), sigma = matrix(c(4,0.1,0.1,0.5), ncol = 2))
+# cluster 3, 50 samples:
+clus_3 = rmvnorm(50, mean = c(-4,-0), sigma = matrix(c(1,0.7,0.7,1), ncol = 2))
+
+# put them together for plotting
+
+# for column on actual cluster
+actual = c(rep(1, nrow(clus_1)),rep(2, nrow(clus_2)),rep(3, nrow(clus_3)))
+
+train_df = as.data.frame(rbind(clus_1,clus_2,clus_3))
+
+train_df$actual_clus <- as.factor(actual)
+
+colnames(train_df) <- c("X1","X2","actual_clus")
+
+# plot the distribution:
+
+# create function that generate data for contours
+set.seed(23)
+
+create_data_for_mvnorm_contour <- function(n, mean, sigma) {
+  d <- as.data.table(rmvnorm(n, mean = mean, sigma = sigma))
+  setnames(d, names(d), c("x", "y"))
+  testd <- as.data.table(expand.grid(
+    x = seq(from = min(d$x), to = max(d$x), length.out=50),
+    y = seq(from = min(d$y), to = max(d$y), length.out = 50)))
+  testd[,Density := dmvnorm(cbind(x,y), mean = colMeans(d), sigma = cov(d))]
+  return(testd)
+}
+
+# create data to plot contours
+clus_1_contour_actual <- create_data_for_mvnorm_contour(1000, mean = c(0,5), sigma = matrix(c(0.5,0.1,0.1,5),ncol=2))
+clus_1_contour_actual$actual_clus = 1
+clus_2_contour_actual <- create_data_for_mvnorm_contour(1000, mean = c(-7,5), sigma = matrix(c(4,0.1,0.1,0.5), ncol = 2))
+clus_2_contour_actual$actual_clus = 2
+clus_3_contour_actual <- create_data_for_mvnorm_contour(1000, mean = c(-4,-0), sigma = matrix(c(1,0.7,0.7,1), ncol = 2))
+clus_3_contour_actual$actual_clus = 3
+
+contour_actual <- rbind(clus_1_contour_actual,clus_2_contour_actual,clus_3_contour_actual)
+contour_actual$actual_clus <- as.factor(contour_actual$actual_clus)
+
+
+ggplot(train_df, aes(x=X1, y=X2, group=actual_clus, col=actual_clus))+
+  geom_point()+
+  geom_contour(data = contour_actual, aes(x,y,z=Density), size = 1, linetype = 2, alpha = 0.3)
+```
+
+### What is wrong with K-means?
+
+K-means is one of the most popular clustering methods out there, it clusters observations by minimizing (up to local minima) the within-group dissimilarity.
+
+However, it has its disadvantage compared to using mixtures
+
+* K-means cluster definition is crude as it uses one point (the centroid) to represent the whole cluster. Using mixtures incorporate a notion of shape
+
+* Since each cluster is represented as a probability density using mixture models, it can have various shapes and data form (e.g. binary dataset with Bernoulli distributions)
+
+* A posterior probability is the output of the model, hence we know the probability of an observation belongs to each cluster given parameters. This gives us a confidence indication on our clustering and also imply that using mixtures, clusters are less sensitive to outliers
+
+* Because there is a dataset likelihood function, we can optimise K too. In K-means, this is impossible
+
+### K-means fails in our simulated dataset
+
+We can see some misclassification mainly for cluster 2 as cluster 1 if we use K-means
+
+```{r k-means-pred, include = FALSE}
+X = as.matrix(train_df %>% select(1:2))
+
+set.seed(43)
+dim(X)
+km.out = kmeans(X,3,nstart=20)
+
+pred_df1_kmeans <- train_df
+  
+pred_df1_kmeans$kmeans_pred = km.out$cluster
+
+table(pred_df1_kmeans$actual_clus, pred_df1_kmeans$kmeans_pred)
+
+# so pred 1 = clus2, pred 2 = 3, pred 3 = 1
+
+pred_df1_kmeans1 <- pred_df1_kmeans %>%
+  mutate(km_clus_aligned = case_when(kmeans_pred==1~2,
+                                     kmeans_pred==2~3,
+                                     kmeans_pred==3~1)) %>%
+  mutate(kmeans_correct = as.numeric(km_clus_aligned == actual_clus))
+
+mean(pred_df1_kmeans1$kmeans_correct)
+pred_df1_kmeans1$km_clus_aligned <- as.factor(pred_df1_kmeans1$km_clus_aligned)
+
+table(pred_df1_kmeans1$actual_clus, as.numeric(pred_df1_kmeans1$km_clus_aligned))
+#s till not too bad actually, some muddling between cluster 1 and 3
+```
+```{r clustering-problem, echo = FALSE, fig.cap = 'Figure 2: K-means fails to capture the shape of clusters'}
+ggplot(pred_df1_kmeans1, aes(x=X1, y=X2, group=km_clus_aligned , col=km_clus_aligned, shape = as.logical(kmeans_correct)))+
+         geom_point()+
+  ggtitle("Using K-means clustering")+
+  labs(col="K-means cluster",
+       shape="Correct cluster")
+```
+
+## Finding Parameters
+
+The way to find and optimise parameters is somewhat technical, I encourage you to read the references at the end of this markdown, and you are more than welcome to look into my .Rmd codes too.
+
+In summary, we need to do the following:
+
+1. Define our dataset likelihood
+2. Unfortunately, we will end up with log-sum expression which is hard to optimise, so we use Jensen's Inequality and maximise the lower bound instead
+3. We take partial derivatives with respect to each parameter and equating to 0 and end up with two sets of expressions which require to solve with an iteration method called - Expectiation Maximisation (EM) Algorithm 
+
+
+```{r run the Algorithm, include = FALSE}
+# let's build the model!!-----
+
+X = as.matrix(train_df %>% select(1:2))
+
+# Initialise the mixture:
+K = 3 # assumed known for now, test miximum likelihood CV later
+
+set.seed(45)
+means = matrix(rnorm(K*2), nrow = K, ncol = 2) # random initialisation
+
+covs = list()
+
+for(k in 1:K){
+  covs[[k]] = runif(1)*diag(2)
+} # again random
+
+priors = rep(1/K,K) # same as pi in book, assume uniform, i.e. no info
+
+# Run it!
+
+max_iter = 100 # break it if neccessary
+
+N = nrow(X)
+D = ncol(X)
+q = matrix(0, nrow = N, ncol = K) # = POSTERIOR!! initialise an empty ones
+B = -Inf #initialise lower bound for Jensen's inequality
+converged = FALSE
+it = 0
+tol = 1e-2 # stop when less than this improvement for lower bound
+temp = matrix(0,nrow=N,ncol=K) # for storing result of likelihood func for each nk temporarily
+
+while(converged == FALSE && it<=max_iter){
+  it = it + 1
+  # Update posterior (q)
+  for(k in 1:K){
+    const = -(D/2)*log(2*pi) - 0.5*log(det(covs[[k]])) # mvnorm constants
+    Xm = X - matrix(rep(means[k,],N),nrow=N,byrow=TRUE) # make (X - means of X)
+    temp[,k] = const - 0.5*diag(Xm%*%solve(covs[[k]])%*%t(Xm)) # store LOG likelihood for each n (for each k), diag only becuase it's now big X instead of xn and T becuz its transposed
+  }
+  
+  # Compute the Bound on the likelihood
+  if(it>1){
+    B = c(B,sum(q*log(matrix(rep(priors,N),nrow=N,byrow=TRUE))))
+    B[it] = B[it] + sum(q*temp) - sum(q*log(q)) #lower bound in p.218
+    if(abs(B[it]-B[it-1])<tol){
+      converged = TRUE
+    }
+  }
+  
+  # not sure this is right??
+  #temp = temp + matrix(rep(priors,N),nrow=N,byrow=TRUE) # no need to log this too??
+  #q = exp(temp - matrix(rep(apply(X=temp,MARGIN=1,FUN=max),K),ncol=K,byrow=FALSE)) #fun should be sum?
+  
+  #replaced
+  temp = exp(temp)*(matrix(rep(priors,N),nrow=N,byrow=TRUE))
+  q=temp
+  #q = temp - (matrix(rep(apply(X=temp,MARGIN=1,FUN=max),K),ncol=K,byrow=FALSE))
+  
+  # Minor hack for numerical issues - stops the code crashing when
+  # clusters are empty
+  q[which(q<1e-60)] = 1e-60
+  #q[which(q>1-1e-60)] = 1e-60 #??
+  q = q/matrix(rep(rowSums(q),K),ncol=K,byrow=FALSE)
+  # Update priors
+  priors = colMeans(q)
+  # Update means
+  for(k in 1:K){
+    means[k,] = colSums(X*matrix(rep(q[,k],D),ncol=D,byrow=FALSE))/sum(q[,k]) # the matrix function is just to spread qnk to have NxD dimension for each k
+  }
+  # update covariances
+  for(k in 1:K){
+    Xm = X - matrix(rep(means[k,],N),nrow=N,byrow=TRUE)
+    covs[[k]] = t(Xm*matrix(rep(q[,k],D),ncol=D,byrow=FALSE))%*%Xm # again becuz it is X instead of Xm so need to retransposed, and sum is in already because X is used
+    covs[[k]] = covs[[k]]/sum(q[,k])
+  }
+}
+
+q
+
+## Plot the bound
+plot(2:length(B),B[2:length(B)],xlab="Iterations",ylab="Bound",type="l")
+
+# show prediction --------
+
+pred_df <- cbind(train_df, q)
+
+colnames(pred_df)[4:6] <- c("posterior_clus1", "posterior_clus2", "posterior_clus3")
+
+pred_df$n = as.numeric(rownames(pred_df))
+
+pred_df <- pred_df %>%
+  select(n, 1:posterior_clus3)
+
+#find max prediction and prob:
+
+pred_df_max <- pred_df %>%
+  select(n, "1"=posterior_clus1,"2"=posterior_clus2,"3"=posterior_clus3) %>%
+  gather(key="given_clus", value = "posterior_p",-1) %>%
+  group_by(n) %>%
+  summarise(max_posterior = max(posterior_p))
+  
+pred_df1 <- pred_df %>%
+  left_join(pred_df_max) %>%
+  mutate(pred_clus = case_when(max_posterior == posterior_clus1 ~ 1,
+                               max_posterior == posterior_clus2 ~ 2,
+                               max_posterior == posterior_clus3 ~ 3))
+
+# draw confusion matrix:
+
+table(pred_df1$actual_clus, pred_df1$pred_clus)
+
+# so pred 1 = 3; and pred 3 = 1
+
+pred_df1 <- pred_df %>%
+  left_join(pred_df_max) %>%
+  rename(posterior_clus1 = "posterior_clus3", posterior_clus3 = "posterior_clus1") %>%
+  mutate(pred_clus = case_when(max_posterior == posterior_clus1 ~ 1,
+                               max_posterior == posterior_clus2 ~ 2,
+                               max_posterior == posterior_clus3 ~ 3)) %>%
+  mutate(same_clus = as.numeric(pred_clus == actual_clus))
+
+pred_df1 %>% filter(same_clus ==0)
+
+pred_df1$pred_clus <- as.factor(pred_df1$pred_clus)
+
+# plot updated clusters:
+
+#BEFORE:
+
+ggplot(train_df, aes(x=X1, y=X2, group=actual_clus, col=actual_clus))+
+  geom_point()+
+  geom_contour(data = contour_actual, aes(x,y,z=Density), size = 1, linetype = 2, alpha = 0.3)+
+  ggtitle("Actual Groups")
+
+#AFTER:
+
+# create data to plot contours
+clus_1_contour_modelled <- create_data_for_mvnorm_contour(1000, mean = means[3,], sigma = covs[[3]])
+clus_1_contour_modelled$pred_clus = 1
+clus_2_contour_modelled <- create_data_for_mvnorm_contour(1000, mean = means[2,], sigma = covs[[2]])
+clus_2_contour_modelled$pred_clus = 2
+clus_3_contour_modelled <- create_data_for_mvnorm_contour(1000, mean = means[1,], sigma = covs[[1]])
+clus_3_contour_modelled$pred_clus = 3
+
+contour_modelled <- rbind(clus_1_contour_modelled,clus_2_contour_modelled,clus_3_contour_modelled)
+contour_modelled$pred_clus <- as.factor(contour_modelled$pred_clus)
+```
+
+## The Result
+
+### Summary of the model iterations
+
+```{r calculate change in distribution, include=FALSE}
+# plot contours only: actual, start , end
+
+#find the initialisation
+
+set.seed(45)
+means_ori = matrix(rnorm(K*2), nrow = K, ncol = 2) 
+
+covs_ori = list()
+
+for(k in 1:K){
+  covs_ori[[k]] = runif(1)*diag(2)
+} # again random
+
+# create data to plot contours
+clus_1_contour_ori <- create_data_for_mvnorm_contour(1000, mean = means_ori[1,], sigma = covs_ori[[1]])
+clus_1_contour_ori$clus = 1
+clus_2_contour_ori <- create_data_for_mvnorm_contour(1000, mean = means_ori[2,], sigma = covs_ori[[2]])
+clus_2_contour_ori$clus = 2
+clus_3_contour_ori <- create_data_for_mvnorm_contour(1000, mean = means_ori[3,], sigma = covs_ori[[3]])
+clus_3_contour_ori$clus = 3
+
+contour_ori <- rbind(clus_1_contour_ori,clus_2_contour_ori,clus_3_contour_ori)
+contour_ori$clus <- as.factor(contour_ori$clus)
+```
+
+The plot below shows the initialised 3 Gaussians in green, and the resulted Gaussians that the model converges to using EM Algorithm in blue, compared with the actual Gaussians in red.
+
+Resulting Gaussians are very close to actual!!
+
+```{r plot model distributions against actaual, echo=FALSE, fig.cap = 'Figure 3: Change in the Gaussians model likelihood'}
+
+ggplot()+
+  geom_contour(data=contour_actual, aes(x,y,z=Density, group=actual_clus, col="Actual Distribution"), linetype = 2)+
+  geom_contour(data = contour_modelled, aes(x,y,z=Density, group = pred_clus, col="Modelled Distribution"), linetype = 1)+
+  geom_contour(data=contour_ori, aes(x,y,z=Density, group=clus, col="Initialised Distribution"), linetype = 2)+
+  labs(x = "X1",
+       y = "X2",
+       color = "Distribution type")+
+  ggtitle("The initial and final model distributions")
+```
+
+###  The model output with posterior probabilities for each cluster (head)
+```{r table-result, echo = FALSE}
+kable(head(pred_df1), col.names = c("Simulated observation", "X1", "X2", "Actual Cluster", "Posterior Probability for Cluster 3", "Posterior Probability for Cluster 2", "Posterior Probability for Cluster 1", "Max. Posterior", "Predicted Cluster", "Same as Actual"))
+```
+
+###  And the model result plot
+
+We can see the model only put two observations in the wrong group, much better than K-means
+
+The plot also annotates the observations with the lowest class posterior probability
+
+```{r plot-result, echo = FALSE, fig.cap = 'Figure 4: The resulting clusters'}
+ggplot(pred_df1, aes(x=X1, y=X2, group=pred_clus , col=pred_clus))+
+  geom_point()+
+  geom_contour(data = contour_modelled, aes(x,y,z=Density), size = 1, linetype = 2, alpha = 0.3)+
+  ggtitle("Mixture clustering result") +
+  geom_text(data=filter(pred_df1, same_clus==0),
+            aes(x=X1,y=X2+0.2,label="Wrong Cluster")) +
+  geom_text(data=filter(pred_df1, max_posterior <0.9),
+            aes(x=X1,y=X2-0.2,label=round(max_posterior,2)))+
+  labs(col="Predicted cluster")
+```
+
+## Finding K: the number of clusters:
+
+* Intuitively we can use K that maximises the dataset likelihood. However, as K increases, likelihood increases monotonically. 
+* This is because, with more distributions, data will lie near the mode of the pdf, hence likelihood with increase. Similar to overfitting
+* We can use cross-validation to find the best K
+
+
+```{r run 10-fold CVs with different K, include=FALSE}
+Kvals = 1:4 # this data can run 4 K max due to collinearity for perfect data?
+outlike = matrix(NA,nrow=length(Kvals),ncol=N)
+# 10 folds CV
+NFold = 10
+sizes = rep(floor(N/NFold),NFold) # sample size of each fold
+sizes[NFold] = sizes[NFold] + N - sum(sizes) # adj remainder
+csizes = c(0,cumsum(sizes))
+set.seed(234)
+order = sample.int(N) # Randomise the data order
+
+
+for(kv in 1:length(Kvals)){
+  K = Kvals[kv]
+  for(fold in 1:NFold){
+    cat('\nK:',K,'fold:',fold)
+    foldindex = order[(csizes[fold]+1):csizes[fold+1]]
+    trainX = X[-foldindex,] 
+    testX = X[foldindex,]
+    
+    # now run the mixture model:
+    set.seed(45)
+    means = matrix(rnorm(K*2), nrow = K, ncol = 2) # random initialisation
+    
+    covs = list()
+    
+    for(k in 1:K){
+      covs[[k]] = runif(1)*diag(2)
+      } # again random
+    
+    priors = rep(1/K,K) # same as pi in book, assume uniform, i.e. no info
+    
+    # Run it!
+    
+    max_iter = 100 # break it if neccessary
+    
+    Ntrain = nrow(trainX)
+    q = matrix(0, nrow = Ntrain, ncol = K) # = POSTERIOR!! initialise an empty ones
+    B = -Inf #initialise lower bound for Jensen's inequality
+    converged = FALSE
+    it = 0
+    tol = 1e-2 # stop when less than this improvement for lower bound
+    temp = matrix(0,nrow=Ntrain,ncol=K) # for storing result of likelihood func for each nk temporarily
+    
+    while(converged == FALSE && it<=max_iter){
+      it = it + 1
+      # Update posterior (q)
+      for(k in 1:K){
+        const = -(D/2)*log(2*pi) - 0.5*log(det(covs[[k]])) # mvnorm constants
+        Xm = trainX - matrix(rep(means[k,],Ntrain),nrow=Ntrain,byrow=TRUE) # make (X - means of X)
+        temp[,k] = const - 0.5*diag(Xm%*%solve(covs[[k]])%*%t(Xm)) # store LOG likelihood for each n (for each k), diag only becuase it's now big X instead of xn and T becuz its transposed
+      }
+      
+      # Compute the Bound on the likelihood
+      if(it>1){
+        B = c(B,sum(q*log(matrix(rep(priors,Ntrain),nrow=Ntrain,byrow=TRUE))))
+        B[it] = B[it] + sum(q*temp) - sum(q*log(q)) #lower bound in p.218
+        if(abs(B[it]-B[it-1])<tol){
+          converged = TRUE
+        }
+      }
+      
+      # not sure this is right??
+      #temp = temp + matrix(rep(priors,N),nrow=N,byrow=TRUE) # no need to log this too??
+      #q = exp(temp - matrix(rep(apply(X=temp,MARGIN=1,FUN=max),K),ncol=K,byrow=FALSE)) #fun should be sum?
+      
+      #replaced
+      temp = exp(temp)*(matrix(rep(priors,Ntrain),nrow=Ntrain,byrow=TRUE))
+      q=temp
+      #q = temp - (matrix(rep(apply(X=temp,MARGIN=1,FUN=max),K),ncol=K,byrow=FALSE))
+      
+      # Minor hack for numerical issues - stops the code crashing when
+      # clusters are empty
+      q[which(q<1e-60)] = 1e-60
+      #q[which(q>1-1e-60)] = 1e-60 #??
+      q = q/matrix(rep(rowSums(q),K),ncol=K,byrow=FALSE)
+      # Update priors
+      priors = colMeans(q)
+      # Update means
+      for(k in 1:K){
+        means[k,] = colSums(trainX*matrix(rep(q[,k],D),ncol=D,byrow=FALSE))/sum(q[,k]) # the matrix function is just to spread qnk to have NxD dimension for each k
+      }
+      # update covariances
+      for(k in 1:K){
+        Xm = trainX - matrix(rep(means[k,],Ntrain),nrow=Ntrain,byrow=TRUE)
+        covs[[k]] = t(Xm*matrix(rep(q[,k],D),ncol=D,byrow=FALSE))%*%Xm # again becuz it is X instead of Xm so need to retransposed, and sum is in already because X is used
+        covs[[k]] = covs[[k]]/sum(q[,k])
+      }
+    }
+    # now mixture completed, find held-out likelihood
+    
+    Ntest = nrow(testX)
+    temp = matrix(0,nrow=Ntest,ncol=K)
+    for(k in 1:K){
+      const = -(D/2)*log(2*pi) - 0.5*log(det(covs[[k]]))
+      Xm = testX - matrix(rep(means[k,],Ntest),nrow=Ntest,byrow=TRUE)
+      temp[,k] = const - 0.5 * diag(Xm%*%solve(covs[[k]])%*%t(Xm))
+    }
+    #temp = exp(temp) + matrix(rep(priors,Ntest),nrow=Ntest,byrow=TRUE) #again, i dont think this is right, should be *
+    temp = exp(temp)*matrix(rep(priors,Ntest),nrow=Ntest,byrow=TRUE)
+    outlike[kv,(csizes[fold]+1):csizes[fold+1]] = as.vector(log(rowSums(temp))) #likelihood of each n is sum of all k, p.217 (6.6)
+  }
+}
+
+# dataset log likelihood for each K:
+
+dataset_log_like = rowSums(outlike)
+
+# use means instead, which is just divide by N, but can calculate std of mean
+
+mean_log_like = rowMeans(outlike)
+
+two_se_upper = rowMeans(outlike)+2*apply(X=outlike,MARGIN=1,FUN=std)/sqrt(N)
+two_se_lower = rowMeans(outlike)-2*apply(X=outlike,MARGIN=1,FUN=std)/sqrt(N)
+
+plot(Kvals, mean_log_like, type="b", ylim=c(min(two_se_lower-0.2),max(two_se_upper+0.2)),
+     xlab="K",ylab="Mean held out log-likelihood")
+points(Kvals,two_se_lower,type="l",col="red")
+points(Kvals,two_se_upper,type="l",col="red")
+
+```
+
+Running the model for different values of K with 10-folds CV (again feel free to read the code), we find that mean test log-likelihood is largest when K = 3 (although K = 4 is nearly as good), which is the correct number of clusters
+
+```{r plot-10-fold CV K results, echo=FALSE, fig.cap='Figure 5: Mean held-out log-likelihood for different values of K'}
+plot(Kvals, mean_log_like, type="b", ylim=c(min(two_se_lower-0.2),max(two_se_upper+0.2)),
+     xlab="K",ylab="Mean held-out log-likelihood")
+points(Kvals,two_se_lower,type="l",col="red")
+points(Kvals,two_se_upper,type="l",col="red")
+```
+
+## Limitations
+
+There are several limitations 
+
+1. No extensive packages for this algorithm: mclust in R is the closest but with limited flexibility (only support normal mixture model and BIC for selecting K)
+2. Like k-means, the algorithm only finds local optima, testing multiple starting points needed
+3. Some data forms might be better with kernelized k-means, e.g. radials
+
+## Extentions
+
+There are serveral usage extensions
+
+1. Other forms of mixture components: e.g. Bernoulli for binary data
+2. Regularise param estimates by setting likelihood x prior
+
+## Key References
+
+Simon Rogers and Mark Girolami. A First Course in Machine Learning. CRC Press, second edition, 2017.
+
+Gareth James, Daniela Witten, Trevor Hastie, Robert Tibshirani. An Introduction to Statistical Learning : with Applications in R. New York: Springer, 2013.
+
